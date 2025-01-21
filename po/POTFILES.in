@@ -1,0 +1,8 @@
+# List of source files containing translatable strings.
+# Please keep this file sorted alphabetically.
+data/io.gitlab.kriptolix.Consoante.desktop.in
+data/io.gitlab.kriptolix.Consoante.metainfo.xml.in
+data/io.gitlab.kriptolix.Consoante.gschema.xml
+src/main.py
+src/window.py
+src/window.ui

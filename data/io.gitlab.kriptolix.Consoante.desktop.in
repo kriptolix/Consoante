@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=consoante
+Exec=consoante
+Icon=io.gitlab.kriptolix.Consoante
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=GTK;
+StartupNotify=true
+DBusActivatable=true

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/io/gitlab/kriptolix/Consoante">
+    <file preprocess="xml-stripblanks">src/gtk/ui/MainWindow.ui</file>
+    <file preprocess="xml-stripblanks">src/gtk/ui/SelectionView.ui</file>
+    <file preprocess="xml-stripblanks">src/gtk/ui/ExecutionView.ui</file>
+    <file preprocess="xml-stripblanks">src/gtk/ui/PlaybackControls.ui</file>    
+    <file preprocess="xml-stripblanks">src/gtk/ui/help-overlay.ui</file>
+  </gresource>
+</gresources>
