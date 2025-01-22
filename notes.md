@@ -1,471 +1,840 @@
-Modelo de dados
-Tabela tracks
-track_id
-artist_id
-genre
-bpm
-energy
-danceability
-valence
-acousticness
+# Especificação Geral do Projeto
 
-Tabela interactions
-track_id
-started_at
-played_seconds
-skipped
-replayed
-mood
+## Visão Geral
 
-Tabela transitions
-from_track
-to_track
-skip_rate
-success_rate
+O projeto consiste em um player de música heurístico e adaptativo, desenvolvido em Python, cujo objetivo é aprender automaticamente os hábitos e preferências do usuário a partir do comportamento de escuta, sem depender exclusivamente de interações explícitas como “gostei” ou “não gostei”.
 
-Aqui nasce a magia.
+O sistema deve interpretar sinais indiretos durante o uso cotidiano — como skips, repetições, volume, ordem das faixas, horários, contexto e padrões de sessão — para construir modelos dinâmicos de preferência.
 
-Sistema de score
+Ao invés de tratar músicas como itens isolados, o sistema modela relações:
 
-Você NÃO precisa de ML pesado inicialmente.
+* entre músicas
+* entre músicas e contextos
+* entre sequências de reprodução
+* entre sessões de escuta
 
-Um scoring heurístico já funciona absurdamente bem:
+Essas relações são armazenadas como pesos ajustáveis, permitindo que o comportamento do player evolua continuamente conforme o uso.
 
-score =
-+ full_plays * 5
-+ replay * 8
-- early_skip * 10
-+ mood_affinity * 6
-+ recentness
+O foco principal não é recomendação baseada em popularidade ou dados externos, mas sim adaptação contextual personalizada.
 
-| Comportamento                | Sinal provável          |
-| ---------------------------- | ----------------------- |
-| ouviu até o fim várias vezes | gosta                   |
-| pulou em <15s                | rejeição forte          |
-| pulou depois de 80%          | talvez goste mas cansou |
-| replay imediato              | afinidade alta          |
-| ouve sempre à noite          | contexto emocional      |
-| escuta após certas músicas   | associação/transição    |
+---
 
+# Conceitos Fundamentais
 
-Depois você evolui para:
+## 1. Aprendizado Implícito
 
-collaborative filtering local
-embeddings
-reinforcement learning
+O sistema prioriza sinais comportamentais indiretos:
 
+* ouvir até o final
+* skip precoce
+* repetição manual
+* alteração de volume
+* remoção da fila
+* padrões de horário
+* padrões de sequência
 
-| Dimensão      | Significado              |
-| ------------- | ------------------------ |
-| energia       | intensidade              |
-| valência      | feliz ↔ triste           |
-| densidade     | cheio ↔ minimalista      |
-| agressividade | suave ↔ agressivo        |
-| organicidade  | acústico ↔ eletrônico    |
-| foco          | distração ↔ concentração |
+Interações explícitas ainda podem existir:
 
+* gostei
+* não gostei
+* favoritar
+* excluir
 
-O que registrar
+Funcionam como reforço adicional.
 
-Evento de play
-track_id
-timestamp
-source
-queue_position
-mood
+---
 
-Evento de stop/skip
-played_seconds
-track_duration
-skip_position_percent
-Evento de replay
+## 2. Contextos
 
-Detectar:
+Toda reprodução acontece dentro de um conjunto de contextos.
 
-replay imediato
-replay frequente
-Evento de contexto
+Exemplos:
 
-Opcional inicialmente:
+* período do dia
+* dia da semana
+* humor selecionado
+* dispositivo de saída
+* volume médio
+* tipo de sessão
 
-hora do dia
-dia da semana
-dispositivo
-volume
-O que isso permite
+Os contextos não definem regras fixas.
+Eles apenas influenciam pesos de afinidade.
 
-Você começa a inferir:
+---
 
-Comportamento	Interpretação
-3 skips rápidos	rejeição
-replay	afinidade
-escuta noturna	contexto
-nunca termina	fadiga
-Implementação técnica
-Banco
+## 3. Humores (“Moods”)
 
-SQLite basta.
-
-Tabela:
-
-interactions
-
-com:
-
-id
-track_id
-started_at
-ended_at
-played_ratio
-skipped
-mood_id
-Regras iniciais
-Exemplo
-played_ratio < 0.15
-→ strong dislike
-
-played_ratio > 0.85
-→ positive affinity
-
-replayed within 10 min
-→ strong affinity
-
-3. Smart Shuffle
-Objetivo
-
-Substituir shuffle aleatório por seleção contextual.
-
-Cada música recebe atributos
+O sistema trabalha com o conceito de “humores”, que representam estados subjetivos de escuta.
 
 Inicialmente:
 
-tags ID3
-gênero
-artista
-play count
-skip rate
+* podem ser definidos manualmente
 
-Depois:
+Posteriormente:
 
-BPM
-energia
-embeddings
+* podem emergir automaticamente a partir de padrões detectados nas sessões.
 
-MOOD SESSIONS
-4. Mood Sessions
+O objetivo não é classificar músicas em gêneros emocionais absolutos, mas descobrir relações práticas de uso.
 
-Essa é provavelmente sua feature principal.
+Exemplo:
+um “mood” pode representar:
 
-Objetivo
+* músicas usadas para foco
+* músicas noturnas
+* sequências energéticas
+* sessões introspectivas
 
-Transformar a sessão atual num contexto emocional.
+Mesmo que o usuário nunca tenha definido isso explicitamente.
 
-Fluxo
+---
 
-Usuário abre:
+## 4. Relações ao invés de Histórico Bruto
 
-Mood: "foco"
+O sistema evita armazenar logs completos indefinidamente.
 
-Tudo que ocorre nessa sessão:
+Ao invés disso:
+eventos são convertidos em relações ponderadas.
 
-aumenta/decrementa afinidade naquele mood
-Estrutura
-Tabela moods
-moods
-Tabela mood_affinity
-track_id
-mood_id
-score
+Exemplos:
 
-TRANSITIONS
+* “essa faixa funciona bem após outra”
+* “essa música é frequentemente skipada pela manhã”
+* “essa transição mantém sessões longas”
+* “essa faixa costuma tocar em volume alto”
 
-O que são transitions
+O banco armazena principalmente:
 
-Você aprende:
-não apenas “o que o usuário gosta”,
-mas:
-“o que combina depois do quê”.
+* afinidades
+* tendências
+* pesos de relacionamento
 
-Exemplo
+Isso reduz complexidade e mantém o sistema focado em comportamento emergente.
 
-Usuário frequentemente:
+---
 
-sai de ambient
-entra em techno leve
+# Objetivos do Projeto
 
-O sistema aprende:
+## Objetivo Principal
 
-ambient → techno suave = boa transição
-Estrutura
-transitions
-from_track
-to_track
-success_score
-Como medir sucesso
+Criar um player que pareça compreender hábitos de escuta sem exigir treinamento manual constante.
 
-Boa transição:
+---
 
-próxima música não levou skip
+## Objetivos Secundários
 
-Ruim:
+### Reprodução Contextual
 
-skip imediato
+Selecionar músicas apropriadas para:
 
-EMBEDDINGS
-O que são embeddings
+* horário
+* sessão
+* sequência atual
+* comportamento recente
 
-Representações numéricas compactas.
+---
 
-Cada música vira:
+### Evolução Contínua
 
-[0.22, 0.91, 0.13, ...]
-O vetor representa
+O sistema deve:
 
-Mistura de:
+* adaptar-se ao longo do tempo
+* permitir mudança de gosto
+* evitar estagnação
 
+---
+
+### Explicabilidade
+
+As decisões devem ser interpretáveis.
+
+Exemplo:
+
+> “Esta faixa foi escolhida porque:
+>
+> * combina com o horário atual
+> * possui alta afinidade com a música anterior
+> * funciona bem em sessões similares”
+
+---
+
+### Arquitetura Modular
+
+O projeto deve separar claramente:
+
+* playback
+* análise
+* aprendizado
+* ranking
+* armazenamento
+
+Permitindo evolução independente dos componentes.
+
+---
+
+# Tecnologias
+
+## Núcleo
+
+* Python
+* SQLite
+* GStreamer
+
+## Análise Musical
+
+* Librosa
+* FFmpeg
+* Mutagen
+
+## Interface Futura
+
+* GTK4
+* Libadwaita
+* PyGObject
+
+---
+
+# Estratégia Técnica
+
+O projeto prioriza:
+
+* heurísticas adaptativas
+* aprendizado incremental
+* sistemas explicáveis
+* baixo acoplamento
+* processamento local
+* simplicidade arquitetural
+
+O objetivo não é construir um sistema de IA pesado, mas um motor heurístico robusto capaz de gerar comportamento inteligente através de relações simples e cumulativas.
+
+---
+
+# Estrutura Geral do Sistema
+
+## Biblioteca
+
+Responsável por:
+
+* escaneamento
+* metadata
+* análise acústica
+
+---
+
+## Playback
+
+Responsável por:
+
+* reprodução
+* fila
+* eventos
+* volume
+* dispositivos
+
+---
+
+## Aprendizado
+
+Responsável por:
+
+* atualização de pesos
+* reforços positivos e negativos
+* decay
+* adaptação contextual
+
+---
+
+## Ranking
+
+Responsável por:
+
+* cálculo de score
+* seleção de próximas músicas
+* exploração controlada
+
+---
+
+## Banco de Dados
+
+Responsável por:
+
+* persistência
+* afinidades
+* transições
+* contextos
+
+---
+
+# Filosofia do Projeto
+
+O sistema deve agir mais como um “DJ adaptativo pessoal” do que como um recomendador tradicional.
+
+A intenção é criar sensação de continuidade, coerência e adaptação contextual, em vez de apenas prever músicas “prováveis”.
+
+O comportamento ideal do sistema é:
+
+* discreto
+* progressivamente inteligente
+* contextual
+* interpretável
+* não intrusivo
+
+# Análise Musical e Processamento Incremental
+
+## Estratégia de Análise
+
+A análise acústica das músicas deve ocorrer de forma:
+
+* assíncrona
+* incremental
+* em segundo plano
+* lazy
+
+O sistema não deve bloquear:
+
+* escaneamento da biblioteca
+* reprodução
+* uso da interface
+
+durante o processamento de características acústicas.
+
+Ao detectar novas músicas, apenas:
+
+* metadata básica
+* duração
+* tags
+
+precisam estar disponíveis imediatamente.
+
+As análises mais pesadas devem ocorrer posteriormente através de uma fila interna de processamento.
+
+---
+
+# Campos de Análise Acústica
+
+Os seguintes atributos serão calculados progressivamente:
+
+```sql
+bpm REAL,
+energy REAL,
+valence REAL,
+danceability REAL,
+loudness REAL,
+acousticness REAL,
+spectral_centroid REAL
+```
+
+Esses dados serão extraídos principalmente utilizando:
+
+* Librosa
+* FFmpeg
+
+---
+
+# Objetivo da Análise Acústica
+
+Os atributos acústicos não devem servir apenas como informação descritiva.
+
+Eles serão usados como base para:
+
+* cálculo de similaridade
+* compatibilidade entre transições
+* agrupamento de sessões
+* descoberta de humores
+* exploração de músicas pouco conhecidas
+* geração de continuidade sonora
+
+---
+
+# Similaridade Musical
+
+O sistema deve conseguir inferir relações entre faixas mesmo sem histórico suficiente do usuário.
+
+Exemplo:
+
+* músicas com BPM parecido
+* energia semelhante
+* loudness compatível
+* características espectrais próximas
+
+podem receber afinidade inicial maior.
+
+Isso permite:
+
+* cold start melhor
+* transições mais naturais
+* descoberta mais coerente
+
+---
+
+# Similaridade Semântica e Gêneros
+
+Metadados também podem contribuir para similaridade:
+
+* gênero
+* artista
+* álbum
+* ano
+
+Porém:
+
+* tags não devem ser tratadas como verdade absoluta
+* comportamento do usuário deve prevalecer sobre metadata
+
+Exemplo:
+duas músicas de gêneros diferentes podem acabar fortemente associadas se o usuário frequentemente as escuta na mesma sessão.
+
+---
+
+# Estratégia Inicial de Similaridade
+
+Inicialmente, a similaridade pode ser heurística simples.
+
+Exemplo:
+
+* diferença de BPM
+* distância entre energia
+* distância entre centroid espectral
+
+gerando um score composto.
+
+Não é necessário usar machine learning avançado na primeira fase.
+
+---
+
+# Evolução Futura
+
+Posteriormente, o sistema pode incorporar:
+
+* embeddings vetoriais
+* clustering
+* nearest-neighbor search
+* análise estatística de sessões
+
+Possíveis bibliotecas futuras:
+
+* numpy
+* scipy
+* scikit-learn
+* annoy
+* faiss
+
+Essas bibliotecas podem ajudar em:
+
+* busca vetorial
+* agrupamento
+* descoberta automática de padrões
+* recomendação contextual
+
+Mas inicialmente o sistema deve permanecer simples, explicável e baseado em heurísticas ajustáveis.
+
+
+
+Especificação do Projeto
+
+Fase 0 — Fundação
+
+Objetivo:
+Construir o núcleo do player como uma ferramenta CLI.
+
+Stack
+Python
+SQLite
+GStreamer
+Librosa
+FFmpeg
+Mutagen
+
+Estrutura Inicial
+
+Módulos separados:
+
+library/
+scan
+metadata
+análise acústica
+
+playback/
+gst pipeline
+fila
+volume
+eventos
+
+learning/
+atualização de pesos
+regras heurísticas
+ranking/
+seleção de músicas
+cálculo de score
+
+database/
+schema
+queries
+migrations simples
+
+cli/
+interface inicial
+Funcionalidades
+Escanear biblioteca
+Extrair metadata
+Analisar áudio
+Inserir no banco
+Reprodução básica
+Queue simples
+Persistência mínima
+
+Eventos mínimos registrados
+play
+pause
+skip
+go back
+end_of_track
+volume_change
+manual_select
+
+Fase 1 — Sistema Heurístico Inicial
+
+Objetivo:
+Gerar comportamento adaptativo simples.
+
+Contextos suportados
 mood
-energia
-comportamento
-contexto
-Benefício
+period
+weekday
+Regras de aprendizado
+Reforço positivo
 
-Você consegue:
+Quando:
 
-calcular similaridade
-interpolar moods
-descobrir relações ocultas
-Como começar simples
+faixa toca até o final
+faixa é repetida
+usuário aumenta volume (peso menor, algumas faixas tem volumes diferentes de outras)
 
-Use:
+Aumentar:
 
-tags
+afinidade contextual
+afinidade de transição
+Reforço negativo
+
+Quando:
+
+skip precoce
+remoção da fila
+
+Reduzir:
+
+peso contextual
+peso transicional
+Regras importantes
+Skip precoce pesa mais
+Skip tardio pesa pouco
+Repetição recente reduz score temporariamente
+Manual play é sinal forte positivo
+Seleção de músicas
+
+Score composto por:
+
+afinidade contextual
+transição
+fadiga
+aleatoriedade controlada
+
+Fase 2 — Sessões e Contexto Real
+
+Objetivo:
+Entender comportamento contínuo.
+
+Conceito de sessão
+
+Sessão contém:
+
+horário inicial
+duração
+sequência
+interrupções
+mood ativo
+Novos contextos
+device
+output
+headphone/speaker
+volume range
+Novas heurísticas
+Progressão energética
+
+Detectar:
+
+aumento gradual de energia
+redução gradual
+alternância extrema
+Compatibilidade de sequência
+
+Aprender:
+
 BPM
-gênero
-artista
+energia
+valence
+loudness
+Exploração controlada
 
-Depois:
+Separar:
 
-Essentia
+músicas seguras
+músicas exploratórias
 
-CLUSTERING
-Objetivo
+Exemplo:
 
-Descobrir grupos automaticamente.
+80% previsível
+20% experimental
 
-Exemplo
+Fase 3 — Humores Emergentes
 
-Sistema percebe:
+Objetivo:
+Descobrir padrões automaticamente.
 
-Cluster A:
-- ambient
-- piano
-- chuva
-- madrugada
+Conceito
 
-Mesmo sem nome.
-
-Você pode sugerir
-"Você parece ter um novo mood emergente"
-
-Isso seria MUITO legal.
-
-Técnicas
-
-Depois:
-
-KMeans
-HDBSCAN
-UMAP/t-SNE visual
-
-MOODS AUTOMÁTICOS
-Objetivo
-
-Eliminar necessidade de criar moods manualmente.
-
-Como funciona
+Humores deixam de ser apenas definidos manualmente.
 
 Sistema detecta:
 
-sessão atual ≈ cluster noturno introspectivo
+grupos recorrentes
+padrões temporais
+sequências similares
+Implementação simples inicial
 
-dia
-mes
-dia da semana
-hora do dia
+Agrupar sessões por:
 
+horário
+energia média
+skips
+repetição
+características acústicas
+Resultado
 
-e adapta automaticamente.
+Criar automaticamente:
 
+clusters
+pseudo-humores
 
-Você pode inferir energia sem IA
+Usuário pode:
 
-Exemplo simples:
+aceitar
+renomear
+ignorar
 
-energia =
-+ loudness
-+ spectral centroid
-+ BPM
-+ dynamic range
+Fase 4 — Inteligência de Playlist
 
-Já funciona surpreendentemente bem.
+Objetivo:
+Criar sensação de “DJ contextual”.
 
-Pipeline recomendado
-Importação
-scan biblioteca
-→ ler metadata
-→ gerar waveform leve
-→ salvar DB
-Análise assíncrona
-worker:
-- BPM
-- loudness
-- key
-- energy
+Recursos
+transições suaves
+controle de energia
+recuperação após skip
+adaptação em tempo real
+Heurísticas
+Recovery Mode
 
+Após múltiplos skips:
 
-FASE 1:
-mutagen + librosa + ffmpeg
-1. mutagen
+aumentar conservadorismo
+tocar músicas seguras
+Drift Control
 
-Mutagen
+Evitar:
 
-Para:
+repetir mesma energia
+repetir mesmo artista
+loops comportamentais
+Session Intent Detection
 
-tags
-metadata
-ReplayGain
-capa
-duração
+Inferir:
 
-É obrigatório praticamente.
+foco
+descoberta
+background
+alta energia
 
-2. librosa
-
-librosa
-
-Para:
-
-BPM
-onset
-spectral features
-chroma
-energia
-
-Ler metadata
-
-mutagen:
-
-artista
-álbum
-gênero
-duração
-bitrate
-replaygain
-Salvar imediatamente
-
-Sem análise pesada.
-
-ETAPA 2 — Queue de análise
-
-Tabela:
-
-analysis_queue
-
-com:
-
-track_id
-status
-priority
-last_attempt
-ETAPA 3 — Worker assíncrono
-
-Thread/process separado:
-
-pega música pendente
-→ analisa
-→ salva features
-ETAPA 4 — Feature store
-
-Tabela:
-
-audio_features
-Estrutura recomendada
-track_id
-bpm
-energy
-loudness
-danceability
-valence
-spectral_centroid
-acousticness
-instrumentalness
-
-Como calcular “energy”
-
-Você pode criar sua própria definição.
+Muito importante.
 
 Exemplo:
 
-energy =
-0.4 * normalized_rms +
-0.3 * normalized_bpm +
-0.3 * spectral_centroid
+“Esta faixa foi escolhida porque combina com:
 
-Isso já funciona MUITO bem.
+Evening
+sequência anterior
+histórico recente”
+
+Isso aumenta percepção de inteligência.
+
+Fase 5 — Refinamento Futuro
+
+Opcional.
+
+Possibilidades
+embeddings vetoriais
+similaridade acústica avançada
+recomendação híbrida
+sincronização
+multi-device
+scrobbling
+plugins
+API local
+
+Fase 6 — UI GNOME
+
+Objetivo:
+Transformar backend em aplicação desktop.
+
+Stack
+GTK4
+Libadwaita
+PyGObject
+Recursos
+gerenciamento da biblioteca
+visualização de humores
+estatísticas
+explicabilidade
+Explicabilidade
+
+Regras Arquiteturais Importantes
+1. Nunca registrar tudo cru
+
+Sempre transformar eventos em:
+
+relações
+pesos
+tendências
+
+Não virar sistema de logging gigante.
+
+2. Aprendizado incremental
+
+Evitar:
+
+reprocessamento pesado
+batch learning obrigatório
+
+Preferir:
+
+atualização contínua
+3. Separar score de decisão
+
+O ranking deve:
+
+calcular score
+explicar score
+
+Isso facilita debug absurdamente.
+
+4. Toda heurística deve ser ajustável
+
+Nunca hardcode:
+
+thresholds
+decay
+bônus
+penalidades
+
+Criar camada de tuning desde cedo.
+
+proposta inicial de estrutura de banco (passível de alteração de acordo com a necessidade)
+
+-- Tabela principal de músicas
+CREATE TABLE IF NOT EXISTS tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT UNIQUE NOT NULL,
+    title TEXT,
+    artist TEXT,
+    album TEXT,
+    duration REAL,
+    year TEXT,
+    genre TEXT,        
+    bpm REAL,
+    energy REAL,
+    valence REAL,
+    danceability REAL,
+    loudness REAL,
+    acousticness REAL,
+    spectral_centroid REAL,
+    analyzed INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabela para definição de contextos
+CREATE TABLE IF NOT EXISTS contexts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    type TEXT NOT NULL,
+    value TEXT NOT NULL,
+
+    UNIQUE(type, value)
+);
+
+-- Tabela geral de afinidade
+CREATE TABLE IF NOT EXISTS track_affinity (
+    track_id INTEGER NOT NULL,
+    context_id INTEGER NOT NULL,
+
+    weight INTEGER NOT NULL DEFAULT 500,
+
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY(track_id, context_id),
+
+    FOREIGN KEY(track_id) REFERENCES tracks(id),
+    FOREIGN KEY(context_id) REFERENCES contexts(id)
+);
+
+-- Tabela geral de afinidade para transições
+CREATE TABLE IF NOT EXISTS transitions (
+    from_track_id INTEGER NOT NULL,
+    to_track_id INTEGER NOT NULL,
+
+    context_id INTEGER NOT NULL,
+
+    weight INTEGER DEFAULT 500,
+
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (
+        from_track_id,
+        to_track_id,
+        context_id
+    ),
+
+    FOREIGN KEY(from_track_id) REFERENCES tracks(id),
+    FOREIGN KEY(to_track_id) REFERENCES tracks(id),
+    FOREIGN KEY(context_id) REFERENCES contexts(id)
+) WITHOUT ROWID;
 
 
-O primeiro fluxo que eu implementaria
-1. Scan de pasta
-encontrar arquivos
-salvar no DB
-2. Metadata extraction
+-- Tabela de configurações para a faixa
+CREATE TABLE IF NOT EXISTS track_play_settings (
+    track_id INTEGER PRIMARY KEY,
 
-mutagen.
+    preferred_volume INTEGER DEFAULT 50,
 
-3. Playback funcional
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-GStreamer.
+    FOREIGN KEY(track_id) REFERENCES tracks(id)
+);
 
-4. Interaction logging
+-- Inserção de Moods iniciais
+INSERT OR IGNORE INTO contexts (type, value) VALUES
+    ('mood', 'Relaxed'),
+    ('mood', 'Energetic'),
+    ('mood', 'Focus'),
+    ('mood', 'Happy'),
 
-plays/skips.
+    ('period', 'Morning'),
+    ('period', 'Afternoon'),
+    ('period', 'Evening'),
+    ('period', 'Night'),
 
-5. Analysis queue
-
-background.
-
-
-Uma recomendação MUITO importante
-NÃO deixe librosa tocar diretamente nos arquivos da biblioteca
-
-Faça pipeline explícito.
-
-Exemplo:
-
-audio_loader.py
-feature_extractor.py
-waveform_generator.py
-
-Porque depois:
-
-você pode trocar librosa
-adicionar Essentia
-adicionar cache binário
-
-sem quebrar tudo.
-
-Outra recomendação importante
-Use multiprocessing para análise
-
-NÃO threads.
-
-Porque:
-
-análise de áudio é CPU-bound
-Python tem GIL
-
-Então:
-
-ProcessPoolExecutor
-
-é ideal.
+    ('weekday', 'Sunday'),
+    ('weekday', 'Monday'),
+    ('weekday', 'Tuesday'),
+    ('weekday', 'Wednesday'),
+    ('weekday', 'Thursday'),
+    ('weekday', 'Friday'),
+    ('weekday', 'Saturday');

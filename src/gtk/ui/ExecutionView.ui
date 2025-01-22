@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <requires lib="gtk" version="4.0"/>
-  <template class="ExecutionView" parent="AdwBin">
+  <template class="ExecutionView" parent="AdwNavigationPage">
+    <property name="title">_execution_view</property>
     <child>
       <object class="AdwToolbarView">
         <child type="top">

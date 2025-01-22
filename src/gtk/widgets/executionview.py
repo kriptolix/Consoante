@@ -24,7 +24,7 @@ from .playbackcontrols import PlaybackControls
 
 @Gtk.Template(resource_path='/io/gitlab/kriptolix/Consoante/'
               'src/gtk/ui/ExecutionView.ui')
-class ExecutionView(Adw.Bin):
+class ExecutionView(Adw.NavigationPage):
     __gtype_name__ = 'ExecutionView'
 
     # label = Gtk.Template.Child()

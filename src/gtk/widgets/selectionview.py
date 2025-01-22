@@ -22,7 +22,7 @@ from gi.repository import Gtk
 
 @Gtk.Template(resource_path='/io/gitlab/kriptolix/Consoante/'
               'src/gtk/ui/SelectionView.ui')
-class SelectionView(Adw.Bin):
+class SelectionView(Adw.NavigationPage):
     __gtype_name__ = 'SelectionView'
 
     # label = Gtk.Template.Child()

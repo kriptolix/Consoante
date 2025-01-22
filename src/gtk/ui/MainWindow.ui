@@ -8,18 +8,21 @@
     <property name="default-height">600</property>
     <child>
       <object class="AdwBreakpoint" id="_break_point">
-        <condition>max-width: 615sp</condition>
+        <condition>max-width: 560sp</condition>
+        <setter object="_split_view" property="collapsed">true</setter>
       </object>
     </child>
     <property name="content">
-      <object class="AdwOverlaySplitView" id="split_view">
+      <object class="AdwNavigationSplitView" id="_split_view">
+        <property name="collapsed">false</property>
+        <property name="sidebar-width-fraction">0.6</property>
+        <property name="min-sidebar-width">260</property>
+        <property name="show-content">true</property>
         <property name="sidebar">
-          <object class="SelectionView">            
-          </object>
+          <object class="SelectionView"></object>
         </property>
         <property name="content">
-          <object class="ExecutionView">            
-          </object>
+          <object class="ExecutionView"></object>
         </property>
       </object>
     </property>
