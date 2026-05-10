@@ -1,9 +1,19 @@
 {
-    "id" : "io.gitlab.kriptolix.Consoante",
+    "id" : "io.github.kriptolix.Consoante",
     "runtime" : "org.gnome.Platform",
-    "runtime-version" : "47",
+    "runtime-version" : "50",
     "sdk" : "org.gnome.Sdk",
     "command" : "consoante",
+    "add-extensions": {
+    "org.freedesktop.Platform.ffmpeg-full": {
+      "version": "24.08",
+      "directory": "lib/ffmpeg",
+      "add-ld-path": "."
+    }
+  },
+  "cleanup-commands": [
+    "mkdir -p ${FLATPAK_DEST}/lib/ffmpeg"
+  ],
     "finish-args" : [
         "--share=network",
         "--share=ipc",
@@ -21,8 +31,14 @@
         "/share/pkgconfig",
         "*.la",
         "*.a"
-    ],
+    ],    
     "modules" : [
+        "requirements/python3-mutagen.json",
+        "requirements/python3-pillow.json",
+        "requirements/python3-numpy.json",
+        "requirements/python3-scipy.json",
+        "requirements/python3-soundfile.json",
+        "requirements/python3-librosa.json",
         {
             "name" : "consoante",
             "builddir" : true,

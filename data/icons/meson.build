@@ -1,4 +1,4 @@
-application_id = 'io.gitlab.kriptolix.Consoante'
+application_id = 'io.github.kriptolix.Consoante'
 
 scalable_dir = 'hicolor' / 'scalable' / 'apps'
 install_data(

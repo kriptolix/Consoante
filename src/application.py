@@ -31,7 +31,7 @@ class ConsoanteApplication(Adw.Application):
     """The main application singleton class."""
 
     def __init__(self):
-        super().__init__(application_id='io.gitlab.kriptolix.Consoante',
+        super().__init__(application_id='io.github.kriptolix.Consoante',
                          flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
         self.create_action('quit', lambda *_: self.quit(), ['<primary>q'])
         self.create_action('about', self.on_about_action)
@@ -51,7 +51,7 @@ class ConsoanteApplication(Adw.Application):
     def on_about_action(self, *args):
         """Callback for the app.about action."""
         about = Adw.AboutDialog(application_name='consoante',
-                                application_icon='io.gitlab.kriptolix.Consoante',
+                                application_icon='io.github.kriptolix.Consoante',
                                 developer_name='k',
                                 version='0.1.0',
                                 developers=['k'],

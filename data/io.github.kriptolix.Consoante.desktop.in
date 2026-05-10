@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=consoante
 Exec=consoante
-Icon=io.gitlab.kriptolix.Consoante
+Icon=io.github.kriptolix.Consoante
 Terminal=false
 Type=Application
 Categories=Utility;
