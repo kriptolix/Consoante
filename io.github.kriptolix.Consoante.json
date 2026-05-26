@@ -34,6 +34,8 @@
     ],    
     "modules" : [
         "requirements/python3-mutagen.json",
+        "requirements/python3-pybind11.json",
+        "requirements/python3-meson-python.json",
         "requirements/python3-pillow.json",
         "requirements/python3-numpy.json",
         "requirements/python3-scipy.json",
