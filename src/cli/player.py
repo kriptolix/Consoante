@@ -1,165 +1,196 @@
-import os
-import pygame
-import random
-import sqlite3
-from scanner import LibraryScanner
-from analyzer import start_background_analysis
-from db_manager import DatabaseManager # Assumindo que o arquivo db_manager.py existe conforme o spec
+"""
+Controlador central do player.
+Orquestra pipeline, fila, events, learning e ranking.
+"""
 
-CONFIG_FILE = "musicli-config.txt"
-DB_FILE = "heuristic_player.db"
+from __future__ import annotations
 
-class AudioEngine:
-    def __init__(self):
-        pygame.mixer.init()
-        self.current_track = None
-        self.last_track_id = None
-        self.paused = False
+from pathlib import Path
+from typing import Optional
 
-    def load_track(self, track_tuple):
-        """track_tuple: (id, file_path, title, artist, duration)"""
-        self.current_track = track_tuple
-        if os.path.exists(track_tuple[1]):
-            pygame.mixer.music.load(track_tuple[1])
-            self.paused = False
-        else:
-            print(f"Erro: Arquivo não encontrado {track_tuple[1]}")
+from database import queries
+from learning import decay, reinforcement
+from playback.events import EventType, PlaybackEvent, dispatch, subscribe
+from playback.pipeline import Pipeline
+from playback.queue import PlaybackQueue
+from ranking.selector import select_next
+from ranking.session_state import SessionState
 
-    def play(self):
-        if self.paused:
-            pygame.mixer.music.unpause()
-            self.paused = False
-        else:
-            pygame.mixer.music.play()
 
-    def pause(self):
-        if not self.paused:
-            pygame.mixer.music.pause()
-            self.paused = True
-        else:
-            pygame.mixer.music.unpause()
-            self.paused = False
+class Player:
+    def __init__(self, verbose: bool = False) -> None:
+        self.verbose = verbose
+        self.session = SessionState()
+        self.queue = PlaybackQueue()
+        self._current_track_id: Optional[int] = None
+        self._pipeline = Pipeline(on_track_end=self._handle_track_end)
 
-    def stop(self):
-        pygame.mixer.music.stop()
-        self.paused = False
+        # Registra listener de eventos no dispatcher
+        subscribe(reinforcement.process)
 
-    def get_position(self):
-        pos_ms = pygame.mixer.music.get_pos()
-        return max(0, pos_ms / 1000.0)
+    # ──────────────────────────────────────────
+    # Controles de reprodução
+    # ──────────────────────────────────────────
 
-    def is_playing(self):
-        return pygame.mixer.music.get_busy()
+    def play_track(self, track_id: int, from_manual: bool = False) -> None:
+        row = queries.get_track_by_id(track_id)
+        if row is None:
+            print(f"[player] Faixa {track_id} não encontrada.")
+            return
 
-    def get_duration(self):
-        return self.current_track[4] if self.current_track and len(self.current_track) > 4 else 0
+        prev_id = self._current_track_id
+        self._current_track_id = track_id
+        self.session.record_play(track_id)
 
-def setup():
-    path = input("Enter the path to your music folder: ")
-    with open(CONFIG_FILE, "w") as config_file:
-        config_file.write(path)
-    return path
+        self._pipeline.load(
+            track_id=track_id,
+            path=row["file_path"],
+            duration=row["duration"] or 0.0,
+        )
+        self._pipeline.play()
 
-def main():
-    db = DatabaseManager(DB_FILE)
-    engine = AudioEngine()
-    scanner = LibraryScanner(db)
+        event_type = EventType.MANUAL_SELECT if from_manual else EventType.PLAY
+        dispatch(PlaybackEvent(
+            type=event_type,
+            track_id=track_id,
+            position=0.0,
+            from_track_id=prev_id,
+            **self._ctx_kwargs(),
+        ))
 
-    if not os.path.exists(CONFIG_FILE):
-        path = setup()
-    else:
-        with open(CONFIG_FILE, "r") as config_file:
-            path = config_file.read().strip()
-    
-    # Sincroniza o banco com o diretório
-    print("Scanning library...")
-    scanner.scan_directory(path)
-    print("Initial scan complete. Deep analysis running in background.")
-    
-    # Inicia análise profunda (BPM, Energy) em segundo plano (Processo separado)
-    analysis_process = start_background_analysis(DB_FILE)
+        if self.verbose:
+            artist = row["artist"] or "?"
+            title  = row["title"] or f"track#{track_id}"
+            print(f"[player] ▶  {artist} — {title}")
 
-    moods = db.get_moods()
-    print("\nSelect a Mood (Enter for default):")
-    for mid, name in moods.items():
-        print(f"{mid}: {name}")
-    m_choice = input("> ")
-    current_mood_id = int(m_choice) if m_choice.isdigit() else 1
+    def pause(self) -> None:
+        if not self._pipeline.is_playing:
+            return
+        pos = self._pipeline.position_relative()
+        self._pipeline.pause()
+        dispatch(PlaybackEvent(
+            type=EventType.PAUSE,
+            track_id=self._current_track_id,
+            position=pos,
+            **self._ctx_kwargs(),
+        ))
 
-    while True:
-        print("\n" + "="*40)
-        print("MusiCLi - Heuristic Player")
-        print("="*40)
-        print("1. Search Tracks")
-        print("2. Play Random")
-        print("3. List All")
-        print("9. Exit")
-        opt = input("Choice: ")
+    def resume(self) -> None:
+        self._pipeline.play()
 
-        selected_track = None
-        prev_track_id = engine.current_track[0] if engine.current_track else None
+    def skip(self) -> None:
+        if self._current_track_id is None:
+            return
+        pos = self._pipeline.position_relative()
+        self._pipeline.stop()
+        self.session.record_skip()
 
-        if opt == "1":
-            query = input("Search term: ")
-            cursor = db.conn.cursor()
-            cursor.execute("SELECT id, file_path, title, artist, duration FROM tracks WHERE title LIKE ? OR artist LIKE ?", 
-                           (f'%{query}%', f'%{query}%'))
-            results = cursor.fetchall()
-            
-            if results:
-                for idx, r in enumerate(results):
-                    print(f"{idx}: {r[2]} - {r[3]}")
-                c = int(input("Track number: "))
-                selected_track = results[c]
-            else:
-                print("No results.")
+        dispatch(PlaybackEvent(
+            type=EventType.SKIP,
+            track_id=self._current_track_id,
+            position=pos,
+            from_track_id=None,
+            **self._ctx_kwargs(),
+        ))
 
-        elif opt == "2":
-            tracks = db.get_all_tracks() # Retorna (id, path, title, artist)
-            if tracks:
-                # Adicionamos a duração para o player
-                track = random.choice(tracks)
-                cursor = db.conn.cursor()
-                cursor.execute("SELECT duration FROM tracks WHERE id = ?", (track[0],))
-                dur = cursor.fetchone()[0]
-                selected_track = (*track, dur)
+        if self.verbose:
+            print(f"[player] ⏭  skip @ {pos:.0%}")
 
-        elif opt == "3":
-            tracks = db.get_all_tracks()
-            for idx, r in enumerate(tracks):
-                print(f"{idx}: {r[2]} - {r[3]}")
-            c = int(input("Track number: "))
-            cursor = db.conn.cursor()
-            cursor.execute("SELECT duration FROM tracks WHERE id = ?", (tracks[c][0],))
-            selected_track = (*tracks[c], cursor.fetchone()[0])
+        self._advance()
 
-        if selected_track:
-            # Registrar transição no banco antes de carregar a nova
-            if prev_track_id:
-                # Aqui chamamos o DB para registrar a transição entre prev_track_id e selected_track[0]
-                db.register_transition(prev_track_id, selected_track[0])
-            
-            engine.load_track(selected_track)
-            engine.play()
-            print(f"Playing: {selected_track[2]}")
-            
-            while True:
-                p_opt = input("[P]ause [S]top [N]ext: ").lower()
-                if p_opt == 'p':
-                    engine.pause()
-                elif p_opt == 's':
-                    engine.stop()
-                    break
-                elif p_opt == 'n':
-                    # Lógica de interação seria chamada aqui antes do stop
-                    engine.stop()
-                    break
+    def go_back(self) -> None:
+        """Repete a faixa atual ou volta para a anterior."""
+        if self._current_track_id is None:
+            return
+        pos = self._pipeline.position_relative()
+        dispatch(PlaybackEvent(
+            type=EventType.GO_BACK,
+            track_id=self._current_track_id,
+            position=pos,
+            **self._ctx_kwargs(),
+        ))
+        self.play_track(self._current_track_id)
 
-        if opt == "9":
-            # Garante que o processo de análise pare imediatamente ao sair
-            if analysis_process and analysis_process.is_alive():
-                analysis_process.terminate()
-            break
+    def set_volume(self, volume: float) -> None:
+        before = self._pipeline.volume
+        self._pipeline.set_volume(volume)
+        after = self._pipeline.volume
 
-if __name__ == "__main__":
-    main()
+        if self._current_track_id is not None:
+            dispatch(PlaybackEvent(
+                type=EventType.VOLUME_CHANGE,
+                track_id=self._current_track_id,
+                position=self._pipeline.position_relative(),
+                volume_before=before,
+                volume_after=after,
+                **self._ctx_kwargs(),
+            ))
+
+    def set_mood(self, mood: str) -> None:
+        self.session.set_mood(mood)
+        if self.verbose:
+            print(f"[player] Mood → {mood}")
+
+    def remove_from_queue(self, track_id: int) -> None:
+        removed = self.queue.remove(track_id)
+        if removed:
+            dispatch(PlaybackEvent(
+                type=EventType.QUEUE_REMOVE,
+                track_id=track_id,
+                position=0.0,
+                **self._ctx_kwargs(),
+            ))
+
+    # ──────────────────────────────────────────
+    # Avanço automático
+    # ──────────────────────────────────────────
+
+    def _handle_track_end(self) -> None:
+        if self._current_track_id is not None:
+            dispatch(PlaybackEvent(
+                type=EventType.END_OF_TRACK,
+                track_id=self._current_track_id,
+                position=1.0,
+                **self._ctx_kwargs(),
+            ))
+        self._advance()
+
+    def _advance(self) -> None:
+        # Primeiro tenta a fila manual
+        if not self.queue.is_empty():
+            entry = self.queue.pop_next()
+            self.play_track(entry.track_id)
+            return
+
+        # Senão usa o ranking para selecionar
+        current_row = (
+            queries.get_track_by_id(self._current_track_id)
+            if self._current_track_id else None
+        )
+        result = select_next(
+            session=self.session,
+            current_track=current_row,
+            verbose=self.verbose,
+        )
+        if result:
+            track_id, _ = result
+            self.play_track(track_id)
+
+    # ──────────────────────────────────────────
+    # Helpers
+    # ──────────────────────────────────────────
+
+    def _ctx_kwargs(self) -> dict:
+        return {
+            "active_mood":    self.session.active_mood,
+            "active_period":  self.session.active_period,
+            "active_weekday": self.session.active_weekday,
+        }
+
+    @property
+    def current_track_id(self) -> Optional[int]:
+        return self._current_track_id
+
+    @property
+    def is_playing(self) -> bool:
+        return self._pipeline.is_playing

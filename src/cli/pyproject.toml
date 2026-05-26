@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "adaptive-player"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "mutagen",
+    "librosa",
+]
+
+[project.optional-dependencies]
+gst = ["PyGObject"]
+dev = ["pytest"]
+
+[project.scripts]
+adaptive-player = "cli.commands:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
