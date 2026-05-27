@@ -38,6 +38,7 @@
         "requirements/python3-meson-python.json",
         "requirements/python3-pillow.json",
         "requirements/python3-numpy.json",
+        "requirements/python3-pythran.json",
         "requirements/python3-scipy.json",
         "requirements/python3-soundfile.json",
         "requirements/python3-librosa.json",
